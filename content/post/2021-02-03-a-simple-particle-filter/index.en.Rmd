@@ -1,0 +1,100 @@
+---
+title: A simple particle filter
+author: Jong-Hoon Kim
+date: '2021-02-03'
+slug: a-simple-particle-filter
+categories:
+  - R
+  - Parameter estimation
+tags:
+  - Sequential Monte Carlo
+  - Particle Filter
+  - R
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-02-03T10:51:35+09:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+### Simple particle filtering example
+#### Simulated data (example adapted from [RPubs](https://rpubs.com/awellis/180442))
+
+First, we simulate data: $y_{1:N}$ is a sequence of noisy observations of a latent variable $x_{1:N}$.
+```{r}
+set.seed(0)
+# start with prior for x
+T <- 50 # number of observations
+x_true <- rep(NA, T)
+obs <- rep(NA, T)
+sx <- 2.2 # standard deviation for x
+sy <- 0.3 # standard deviation for y
+x_true[1] <- rnorm(1, 0, 1)
+obs[1] <- rnorm(1, x_true[1], sy)
+
+for (t in seq(2, T)) {
+  x_true[t] <- rnorm(1, x_true[t-1], sx)
+  obs[t] <- rnorm(1, x_true[t], sy)
+}
+```
+
+#### Particle filtering
+```{r, warning=F, message=F}
+T <- length(obs)
+N <- 100 # number of particles
+# create x and weight matrices
+x <- matrix(nrow =  N, ncol = T)
+x_post <- matrix(nrow =  N, ncol = T) # weighted resampling with replacement. This ensures that X will converge to the true
+weights <- matrix(nrow =  N, ncol = T) # weights
+W <- matrix(nrow =  N, ncol = T) # normalized weights
+A <- matrix(nrow =  N, ncol = T) # indices according to the normalized weights
+# initial (at t=1):
+# draw X from prior distribution
+x[, 1] <- rnorm(N, 0, sx)
+# calculate weights, i.e. probability of evidence given sample from X
+weights[, 1] <- dnorm(obs[1], x[, 1], sy)
+# normalise weights 
+W[, 1] <- weights[, 1]/sum(weights[, 1])
+A[, 1] <- sample(1:N, prob = W[1:N, 1], replace = T) 
+x_post[, 1] <- x[A[, 1], 1] 
+
+for (t in seq(2, T)) {
+  # predict x_{t} from previous time step x_{t-1}
+  # based on process (transition) model
+  x[, t] <- rnorm(N, x_post[, t-1], sx)
+  # calculate  and normalise weights
+  weights[, t] <- dnorm(obs[t], x[, t], sy)
+  W[, t] <- weights[, t]/sum(weights[, t])
+  A[, t] <- sample(1:N, prob = W[1:N, t], replace = T)
+  # weighted resampling with replacement
+  x_post[, t] <- x[A[, t], t]
+}
+
+x_means <- apply(x_post, 2, mean)
+x_quantiles <- apply(x_post, 2, function(x) quantile(x, probs = c(0.025, 0.975)))
+df <- data.frame(t = seq(1, T),
+                 x_mean = x_means,
+                 x_lb = x_quantiles[1, ],
+                 x_ub = x_quantiles[2, ],
+                 x_true = x_true,
+                 observations = obs)
+
+library(ggplot2)
+ggplot(df, aes(x = t)) +
+geom_ribbon(aes(ymin = x_lb, ymax = x_ub, fill="95% credible interval")) +
+geom_line(aes(y = x_mean, color="X mean")) +
+geom_line(aes(y = observations, color="Observations")) +
+geom_point(aes(y = x_mean, color="X mean")) +
+geom_point(aes(y = observations, color="Observations")) +
+labs(y="Values", x="Time") + 
+scale_colour_manual("", values=c("X mean"="black", "Observations"="darkred")) +
+scale_fill_manual("", values="grey")
+  
+```
+
+
+

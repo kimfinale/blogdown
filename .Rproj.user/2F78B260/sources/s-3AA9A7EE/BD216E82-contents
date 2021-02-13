@@ -1,0 +1,263 @@
+---
+title: Conditional autoregressive (CAR) model (Part I)
+author: ''
+date: '2021-02-08'
+slug: conditional-autoregressive-car-model-part-i
+categories: []
+tags: []
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-02-08T12:35:06+09:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+editor_options: 
+  chunk_output_type: console
+---
+---
+title: Conditional Autoregressive (CAR) model (Part I)
+author: ''
+date: '2021-02-08'
+slug: conditional-autoregressive-regression-part-i
+categories: []
+tags: []
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-02-08T07:16:43+09:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+Many examples and explanations are based on [Spatial Data Science](https://keen-swartz-3146c4.netlify.app/), [Spatial Data Science](https://rspatial.org/raster/analysis/3-spauto.html), [RPubs](https://rpubs.com/chrisbrunsdon/114718), [Rpubs](https://rpubs.com/chrisbrunsdon/carstan) articles. 
+
+A very good description of spatial data analysis is available at [Spatial Data Science](https://keen-swartz-3146c4.netlify.app/). 
+
+In his book *Applied Spatial Data Analysis with R*, Bivand describes our understanding of the data as the following equation: 
+$$\text{data = smooth + rough}$$
+For spatial data, the equation becomes:
+$$\text{data = smooth + spatial smooth + rough}$$
+
+As with other statistical modeling, it would be important to think through the question and check if the added spatial component help better understand the data.
+
+I first need to understand if there is spatial autocorrelation in the data. One way to test this is to use the statistic called Moran's I. Before delving into how to compute Moran's I, let's understand the basic concepts and do simpler analysis.
+
+## Autocorrelation
+Autocorrelation (whether spatial or not) is a measure of similarity (correlation) between nearby observations. One example that is (temporally) autocorrelated would be person's weights measured over time.  First, let's generate some random numbers and compute some statistics.
+
+```{r}
+set.seed(0)
+d <- sample(100, 10) # 10 observations between 1 and 100
+```
+Plotting $d[t]$ against $d[t-1]$ gives some idea about autocorrelation. 
+```{r}
+a <- d[-length(d)]
+b <- d[-1]
+plot(a, b, xlab='t', ylab='t-1')
+```
+Let's compute correlation between $d[t]$ and $d[t-1]$. 
+```{r, message=F}
+cor(a, b)
+## [1] 0.1227634
+```
+We don't see high correlation.  Now let's sort the $d$ and make a similar plot.
+```{r}
+d <- sort(d)
+a <- d[-length(d)]
+b <- d[-1]
+plot(a, b, xlab='t', ylab='t-1')
+```
+
+```{r, eval=F}
+cor(a, b)
+# [1] 0.9819258
+```
+We have so far looked at correlation for the lag of one. The acf (auto-correlation function) function shows autocorrelation computed in a slightly different way for several lags (it is 1 to each point it self, very high when comparing with the nearest neighbor, and then tapers off).
+```{r}
+acf(d) # starts with lag of zero
+# library(forecast)
+# Acf(d) # starts with lag of one
+```
+Similar functions include ccf (cross correlation function)
+```{r}
+ccf(a, b)
+```
+and pacf (partial auto-correlation function)
+```{r}
+pacf(a, b)
+```
+
+## Spatial autocorrelation: Moran's I
+Spatial autocorrelation is similar to the aforementioned temporal autocorrelation but it has at least two dimensions, which makes it more complicated. A common statistic used to describe spatial autocorrelation is Moran’s I, defined as below:
+
+$$I = \frac{n}{\sum_{i=1}^n (y_i-\bar{y})^2} \frac{\sum_{i=1}^n \sum_{j=1}^n w_{ij}(y_i-\bar{y})(y_j-\bar{y})}{\sum_{i=1}^n \sum_{j=1}^n w_{ij}}$$
+, where $w_{ij}$ represents an element of a weight matrix, $W$. The $W$ is also called adjacency (or contiguity) matrix and $w_{ij}$ is zero if regions $i$ and $j$ are not neighbors, and some positive values if they are.
+
+Let's calculate an adjacency matrix and Moran's I example using a polygon (Luxembourg) from the raster package. 
+```{r}
+library(raster)
+lux <- shapefile(system.file("external/lux.shp", package="raster")) # Luxembourg
+data.frame(lux) # to look at the data
+library(sf) 
+library(ggplot2)
+library(viridis)
+luxsf <- st_as_sf(lux)
+ggplot() + geom_sf(data = luxsf, aes(fill = NAME_2)) + scale_fill_viridis_d("Canton")
+```
+
+Let's suppose that we want to know if there is an spatial autocorrelation in the variable, AREA. Let's first compute $W$, which requires defining neighbors using the poly2nb function from the spdep package. 
+
+```{r, eval=F}
+library(spdep)
+luxnb <- poly2nb(lux, queen = F) # there is more than one way to define neighbors
+class(luxnb)
+## [1] "nb"
+summary(luxnb)
+# Neighbour list object:
+# Number of regions: 12
+# Number of nonzero links: 46
+# Percentage nonzero weights: 31.94444
+# Average number of links: 3.833333
+# Link number distribution:
+# 
+# 2 3 4 5 6
+# 1 5 3 1 2
+# 1 least connected region:
+# 3 with 2 links
+# 2 most connected regions:
+# 1 11 with 6 links
+plot(lux)
+plot(luxnb, coords = coordinates(lux), add=T, col=2, lwd=2)
+```
+Now let's compute Moran's I. 
+```{r}
+library(spdep)
+ww <- nb2listw(luxnb, style='B') # style is critical for Moran's I -- try other styles
+moran.test(lux$AREA, ww)
+#Monte Carlo simulation is the preferred method (in fact, the only good method).
+moran.mc(lux$AREA, ww, nsim=99)
+```
+Moran's I (-0.15) is not significantly different (p-value = 0.6) from the value what you would get in the absence of spatial autocorrelation (if the data were spatially random) (-0.09)
+
+
+## Spatial autogressive model
+
+```{r}
+ggplot(data = data.frame(ireland), aes(x=POPCHG, y=A)) + geom_point() + geom_smooth(method='lm')
+```
+
+
+
+
+```{r, echo=F, eval=F}
+# library(gstat)
+prsub <- readRDS("C:/Users/jonghoon.kim/Blog/blogdown/data/prsub.rds")
+library(data.table)
+# nb <- tri2nb(coordinates(prsub)) # coordinates to neighbors
+nb <- tri2nb(prsub[,c("long","lat")]) # coordinates to neighbors
+# prsub <- as.data.table(prdata_sub) # prdata_sub from the preiovus code chunk
+# prsub[, prob := outcome/sample]
+# coordinates(prsub) <- ~long+lat 
+library(spdep)
+# nb <- tri2nb(coordinates(prsub)) # coordinates to neighbors
+nb <- tri2nb(prsub[,c("long","lat")]) # coordinates to neighbors
+ww <- nb2listw(nb, style='B')
+moran.test(prsub$prob, ww, randomisation=FALSE)
+moran.mc(prsub$prob, ww, nsim=99)
+## Since I will work with the raster format data, let's practice 
+library(raster)
+r <- raster(nrow=18, ncol=36)
+values(r) <- runif(ncell(r)) * 10
+poly <- rasterToPolygons(r)
+nb <- poly2nb(poly) # coordinates to neighbors
+ww <- nb2listw(nb, style='B')
+moran.test(poly$layer, ww, randomisation=FALSE)
+moran.mc(poly$layer, ww, nsim=99)
+```
+
+
+<!-- ```{r, echo=F, eval=F} -->
+<!-- library(spdep) -->
+<!-- prsub <- readRDS("C:/Users/jonghoon.kim/Blog/data/prsub.rds") -->
+<!-- ireland <- readRDS("C:/Users/jonghoon.kim/Blog/data/ireland.rds") -->
+<!-- library(MASS) -->
+<!-- library(ggplot2) -->
+<!-- # ggplot(data=data.frame(ireland),aes(x=POPCHG,y=A)) + -->
+<!-- #   geom_point() + -->
+<!-- #   geom_smooth(method='lm',col='darkblue',fill='blue') + -->
+<!-- #   geom_smooth(method='rlm',col='darkred',fill='red') -->
+<!-- ggplot(data=prsub, aes(x=sample, y=prob)) + -->
+<!--   geom_point() + -->
+<!--   geom_smooth(method='lm', col='darkblue', fill='blue') + -->
+<!--   geom_smooth(method='rlm', col='darkred', fill='red') -->
+
+<!-- # # library(tmap) -->
+<!-- # ireland$resids <- rlm(A~POPCHG, data=data.frame(ireland))$res -->
+<!-- #  -->
+<!-- #  -->
+<!-- library(viridis) -->
+<!-- library(sf) -->
+
+<!-- ireland_sf <- st_as_sf(ireland) -->
+<!-- ggplot() +  -->
+<!--  geom_sf(data = ireland_sf, aes(fill=resids)) + -->
+<!--  scale_fill_viridis_c() + -->
+<!--  theme_void() -->
+<!-- ``` -->
+
+<!-- ## assign autoregressive and linearly dependent by covariates valuevariables  -->
+<!-- $$ Y = \alpha + \beta X + \epsilon$$ -->
+<!-- $$ \epsilon = \lambda W Y + \eta$$ -->
+<!-- $$ \eta_i \sim \mathcal{N}(0,\;\sigma^2) \; \forall i  $$ -->
+
+<!-- $$ Y = (I-\lambda W)^{-1} \beta X + (I - \lambda W)^{-1} \eta) $$ -->
+<!-- ```{r, warning=F, message=F} -->
+<!-- # fake data -->
+<!-- library(raster) -->
+<!-- library(spdep) -->
+<!-- library(MASS) -->
+<!-- library(tidyverse) -->
+<!-- set.seed(1) -->
+<!-- r <- raster(nrow=10, ncol=10) -->
+<!-- values(r) <- runif(ncell(r)) * 10 -->
+<!-- poly <- rasterToPolygons(r) -->
+<!-- nb <- poly2nb(poly) # coordinates to neighbors -->
+<!-- lambda = 0.8 -->
+<!-- beta = 0.3 -->
+<!-- alpha = 26 -->
+<!-- W = nb2mat(nb) -->
+<!-- # poly$layer2 = alpha + beta * poly$layer + lambda * as.vector(nbmat %*% poly$layer2) + rnorm(length(poly$layer)) -->
+<!-- library(matlib)  -->
+<!-- poly$layer2 = as.vector(inv(diag(100) - lambda * W) %*% (beta * poly$layer)) + as.vector(inv(diag(100) - lambda * W) %*% rnorm(length(poly$layer), mean=0, sd=2)) -->
+<!-- plot(data.frame(poly)) -->
+<!-- fit1 = lm(layer2 ~ layer, data=data.frame(poly)) -->
+<!-- fit2 = rlm(layer2 ~ layer, data=data.frame(poly)) -->
+<!-- fitsp <- errorsarlm(layer2 ~ layer, data=data.frame(poly), listw=nb2listw(nb)) -->
+<!-- summary(fit1) -->
+<!-- summary(fit2) -->
+<!-- summary(fitsp) -->
+
+<!-- newd = data.frame(layer = seq(0, 10, length.out = 100)) -->
+<!-- preddf <- data.frame(pred = predict(fit1, data.frame(poly))) -->
+<!-- fit1p = predict(fit1, newd, interval = "prediction") -->
+<!-- fit1p = predict(fit1, newd, interval = "confidence") -->
+<!-- d <- cbind(preddf, poly@data) -->
+<!-- # d %>%  -->
+<!-- #   # pivot_longer(col = -x) %>%  -->
+<!-- #   ggplot(aes(x=x)) +  -->
+<!-- #   geom_point(aes(y=layer2)) + -->
+<!-- #   geom_line(aes(y=fit1$fitted.values), color="darkred") + -->
+<!-- #   geom_abline(aes(intercept = coef(fit1)[["(Intercept)"]],  -->
+<!-- #                   slope = coef(fit1)[["layer"]]),   -->
+<!-- #               color = "dodgerblue") -->
+
+<!-- ```  -->

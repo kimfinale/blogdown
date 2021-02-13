@@ -1,0 +1,100 @@
+---
+title: A simple particle filter
+author: Jong-Hoon Kim
+date: '2021-02-03'
+slug: a-simple-particle-filter
+categories:
+  - R
+  - Parameter estimation
+tags:
+  - Sequential Monte Carlo
+  - Particle Filter
+  - R
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-02-03T10:51:35+09:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+
+<div id="simple-particle-filtering-example" class="section level3">
+<h3>Simple particle filtering example</h3>
+<div id="simulated-data-example-adapted-from-rpubs" class="section level4">
+<h4>Simulated data (example adapted from <a href="https://rpubs.com/awellis/180442">RPubs</a>)</h4>
+<p>First, we simulate data: <span class="math inline">\(y_{1:N}\)</span> is a sequence of noisy observations of a latent variable <span class="math inline">\(x_{1:N}\)</span>.</p>
+<pre class="r"><code>set.seed(0)
+# start with prior for x
+T &lt;- 50 # number of observations
+x_true &lt;- rep(NA, T)
+obs &lt;- rep(NA, T)
+sx &lt;- 2.2 # standard deviation for x
+sy &lt;- 0.3 # standard deviation for y
+x_true[1] &lt;- rnorm(1, 0, 1)
+obs[1] &lt;- rnorm(1, x_true[1], sy)
+
+for (t in seq(2, T)) {
+  x_true[t] &lt;- rnorm(1, x_true[t-1], sx)
+  obs[t] &lt;- rnorm(1, x_true[t], sy)
+}</code></pre>
+</div>
+<div id="particle-filtering" class="section level4">
+<h4>Particle filtering</h4>
+<pre class="r"><code>T &lt;- length(obs)
+N &lt;- 100 # number of particles
+# create x and weight matrices
+x &lt;- matrix(nrow =  N, ncol = T)
+x_post &lt;- matrix(nrow =  N, ncol = T) # weighted resampling with replacement. This ensures that X will converge to the true
+weights &lt;- matrix(nrow =  N, ncol = T) # weights
+W &lt;- matrix(nrow =  N, ncol = T) # normalized weights
+A &lt;- matrix(nrow =  N, ncol = T) # indices according to the normalized weights
+# initial (at t=1):
+# draw X from prior distribution
+x[, 1] &lt;- rnorm(N, 0, sx)
+# calculate weights, i.e. probability of evidence given sample from X
+weights[, 1] &lt;- dnorm(obs[1], x[, 1], sy)
+# normalise weights 
+W[, 1] &lt;- weights[, 1]/sum(weights[, 1])
+A[, 1] &lt;- sample(1:N, prob = W[1:N, 1], replace = T) 
+x_post[, 1] &lt;- x[A[, 1], 1] 
+
+for (t in seq(2, T)) {
+  # predict x_{t} from previous time step x_{t-1}
+  # based on process (transition) model
+  x[, t] &lt;- rnorm(N, x_post[, t-1], sx)
+  # calculate  and normalise weights
+  weights[, t] &lt;- dnorm(obs[t], x[, t], sy)
+  W[, t] &lt;- weights[, t]/sum(weights[, t])
+  A[, t] &lt;- sample(1:N, prob = W[1:N, t], replace = T)
+  # weighted resampling with replacement
+  x_post[, t] &lt;- x[A[, t], t]
+}
+
+x_means &lt;- apply(x_post, 2, mean)
+x_quantiles &lt;- apply(x_post, 2, function(x) quantile(x, probs = c(0.025, 0.975)))
+df &lt;- data.frame(t = seq(1, T),
+                 x_mean = x_means,
+                 x_lb = x_quantiles[1, ],
+                 x_ub = x_quantiles[2, ],
+                 x_true = x_true,
+                 observations = obs)
+
+library(ggplot2)
+ggplot(df, aes(x = t)) +
+geom_ribbon(aes(ymin = x_lb, ymax = x_ub, fill=&quot;95% credible interval&quot;)) +
+geom_line(aes(y = x_mean, color=&quot;X mean&quot;)) +
+geom_line(aes(y = observations, color=&quot;Observations&quot;)) +
+geom_point(aes(y = x_mean, color=&quot;X mean&quot;)) +
+geom_point(aes(y = observations, color=&quot;Observations&quot;)) +
+labs(y=&quot;Values&quot;, x=&quot;Time&quot;) + 
+scale_colour_manual(&quot;&quot;, values=c(&quot;X mean&quot;=&quot;black&quot;, &quot;Observations&quot;=&quot;darkred&quot;)) +
+scale_fill_manual(&quot;&quot;, values=&quot;grey&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-2-1.png" width="672" /></p>
+</div>
+</div>

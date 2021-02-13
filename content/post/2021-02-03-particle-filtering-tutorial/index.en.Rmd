@@ -1,0 +1,288 @@
+---
+title: Particle filtering tutorial
+author: Jong-Hoon Kim
+date: '2021-02-03'
+slug: particle-filtering-tutorial
+categories:
+  - Parameter estimation
+  - R
+tags:
+  - Particle Filter
+  - Sequential Monte Carlo
+  - Infectious disease epidemiology
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-02-03T12:07:57+09:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+Particle filters operate on a set of randomly sampled values of a latent state or unknown parameter. The sampled values, generally referred to as 'particles', are propagated over time to track the posterior distribution of the state or parameter at each point in time. Each particle is assigned a weight in relation to its posterior probability.
+
+Particle filtering is also known as: 
+
+- Sequential sampling-importance resampling (SIR)
+- Bootstrap filters
+- Condensation trackers
+- Interacting particle approximations
+- Survival of the fittest
+
+The foundations for the particle filtering is *sequential importance sampling and resampling*. 
+We will review item by item and start with the *importance sampling*.
+
+Monte Carlo integration is basically to calculate (relative) area by to count the samples falling in the area of interest. It has the same underlying principle as calculating a sample average to approximate the population average. The law of large numbers ensures (almost surely) that we can approximate the population mean without a bias as long as we are provided with a large enough sample. Let's suppose we will calculate the expected value of $\sin(x)/x$
+```{r, echo=FALSE, warning=FALSE, message=F}
+library(gamlss.dist) # for the exGAUS distribution
+mu <- 0.4; sigma <- 0.1; tau <- 0.5 # the true parameters
+t <- seq(0, 6, by = 0.01) # response time
+df <- data.frame(t = t, density = dexGAUS(t, mu = mu, sigma = sigma, nu = tau))
+library(ggplot2)
+ggplot(df, aes(t, density)) +
+  geom_line() + 
+  geom_vline(xintercept = 3, linetype = "dotted", size = 1, color = "darkred") +
+  geom_segment(aes(x = 3, y = 0.25, xend = 6, yend = 0.25), linejoin = "mitre",
+                  arrow = arrow(length = unit(0.25, "cm")))
+```
+
+### Importance sampling
+Importance sampling (IS) is a Monte Carlo integration technique and often used to integrate However, there are situations where obtaining samples that fall in the area of interest from the target distribution are not straightforward. In this case, we can use another distribution, called *instrumental distribution*, which can generate reasonable size of the samples. 
+
+We will estimate the proportion of successes that require over 3 seconds for a particular task, an example from the paper by Maarten Speekenbrink [1]. Response times (i.e., times that a person needs to complete a task) is often modeled as the ex-Gaussian distribution, which is defined as the sum of an exponential and Gaussian distributed variable.
+
+Let's first look at the ex-Gausssian distribution
+```{r, echo=FALSE, warning=FALSE, message=F}
+library(gamlss.dist) # for the exGAUS distribution
+mu <- 0.4; sigma <- 0.1; tau <- 0.5 # the true parameters
+t <- seq(0, 6, by = 0.01) # response time
+df <- data.frame(t = t, density = dexGAUS(t, mu = mu, sigma = sigma, nu = tau))
+library(ggplot2)
+ggplot(df, aes(t, density)) +
+  geom_line() + 
+  geom_vline(xintercept = 3, linetype = "dotted", size = 1, color = "darkred") +
+  geom_segment(aes(x = 3, y = 0.25, xend = 6, yend = 0.25), linejoin = "mitre",
+                  arrow = arrow(length = unit(0.25, "cm")))
+```
+
+The task in hand is to determine the area under the curve where $t >= 3$. In this case, we know how to integrate the function so we don't have to used MC integration. However, we will use MC integration for practice. True value of $\int_3^{\infty} p(x) dx$ is $~ 0.00564$ shown in the following code
+
+```{r, warning=FALSE, message=FALSE}
+library(gamlss.dist) # for the exGAUS distribution
+seed <- 0
+mu <- .4; sigma <- .1; tau <- .5 # the true parameters
+tm <- 3 # the truncation point
+
+(p <- 1 - pexGAUS(tm, mu = mu, sigma = sigma, nu = tau)) # compute the true probability
+```
+
+We compute the integration by sampling ($n = 2000$).  Note that $x$ is sampled from 
+```{r, warning=FALSE, message=FALSE}
+set.seed(0) # set the seed to exactly reproduce results
+N <- 2000 # number of samples to use
+nsim <- 1 # number of times to repeat the computation, to show variability of the estimates
+x <- matrix(rnorm(N*nsim, mean = mu, sd = sigma) + rexp(N*nsim, rate = 1/tau), nrow = N, ncol = nsim)
+# could have used x <- matrix(rexGAUS(N*nsim,mu=mu,sigma=sigma,nu=tau),nrow=N,ncol=nsim) but this is terribly slow!
+(epMC <- apply(x, 2, function(z) sum(z >= tm) / N)) # computed MC estimate for each simulation
+```
+We see that the estimate is quite far off (it may vary depending on the computer system). We can repeat the process above (setting  nsim > 1) to understand a variance of the estimate.  
+
+In the following we use  
+```{r, warning=FALSE, message=FALSE}
+library(msm) # for the truncated Normal distribution
+library(gamlss.dist) # for the exGAUS distribution
+## Importance Sampling estimate with a truncated exponential:
+epIS1 <- rep(0.0, nsim) # pre-assign a vector for the results
+set.seed(seed) # set the seed to exactly reproduce results
+x1 <- matrix(rexp(N*nsim, rate = tau) + tm, nrow = N, ncol = nsim) # sample from a shifted exponential
+w1 <- dexGAUS(x1, mu = mu, sigma = sigma, nu = tau) / dexp(x1-tm, rate = tau) # compute importance weights
+epIS1 <- colSums(w1)/N # computed IS estimate for each simulation
+
+## Importance Sampling estimate with a truncated normal:
+epIS2 <- rep(0.0, nsim) # pre-assign a vector for the results
+set.seed(seed) # set the seed to exactly reproduce results
+x2 <- matrix(rtnorm(N*nsim, mean = tm, sd = sigma, lower = tm), nrow = N, ncol = nsim) # sample from a truncated Normal
+w2 <- matrix(dexGAUS(x2, mu = mu, sigma = sigma, nu = tau) / dtnorm(x2, mean = tm, sd = sigma, lower = tm), nrow = N, ncol = nsim) # compute importance weights
+epIS2 <- colSums(w2) / N # computed IS estimate for each simulation
+
+## ----exgaussRep,echo=FALSE,warning=FALSE,fig.width=9,fig.height=3--------
+require(ggplot2)
+est <- data.frame(ep = c(epMC,epIS1,epIS2),
+                  method = factor(rep(1:3, each=nsim), labels = c("Basic Monte Carlo","Importance sampling (exponential)", "Importance sampling (normal)")))
+ggplot(est, aes(x=ep)) + 
+  geom_histogram() + 
+  facet_grid(. ~ method) + 
+  xlim(c(.001,.01)) + 
+  xlab("Estimate") + ylab("Count") + 
+  geom_vline(xintercept = p, lty=2) + 
+  theme(strip.text = element_text(size = rel(1.1)), axis.title=element_text(size = rel(1.5)))
+```
+
+### Sequential importance sampling and online Bayesian inference
+We want to compute a sequence of posterior distributions $p(\theta | y_1), p(\theta | y_{1:2}), ..., p(\theta | y_{1:t})$ where $y_{1:t} = (y_1, y_2, ..., y_t)$ denotes a sequence of observations and $\theta$ a vector of parameters.
+
+```{r, warning=FALSE, message=FALSE}
+### Here we use SIS to sequentially compute the posterior mean and SD of a Gaussian variable
+set.seed(seed) # set the seed to exactly reproduce the results
+# set the true parameters:
+true_mu <- 5
+true_sigma <- 5
+nT <- 100 # number of time points
+# draw the observations:
+y <- rnorm(nT,mean=true_mu,sd=true_sigma) 
+
+npart <- 200 # number of particles
+# draw particles from the prior distributions
+sigmas <- runif(npart,0,50)
+mus <- rnorm(npart,mean=0,sd=10)
+# the weights are uniform as we sampled directly from the prior:
+w <- rep(1/npart, npart)
+# Generate a matrix to store the weights:
+W <- matrix(0.0,ncol=nT,nrow=npart)
+# iteratively update the weights
+for(t in 1:nT) {
+  w <- w * dnorm(y[t], mean=mus, sd=sigmas)
+  w <- w/sum(w) #normalize
+  W[,t] <- w # store
+}
+# compute the posterior means and sd's
+mu_post <- colSums(mus*W)
+sigma_post <- colSums(sigmas*W)
+
+## ----IteratedBayesianEstimationFigure,echo=FALSE,results='hide',warning=FALSE,fig.width=7,fig.height=3----
+lowgrad = grey(.15)
+highgrad = grey(.60)
+### This plot is of the results of SIS for time-invariant parameters
+
+gdat <- data.frame(parameter="mu",
+                   t=rep(1:nT,each=npart),
+                   mu=rep(mus[order(mus)],nT),
+                   w=as.numeric(W[order(mus),]),
+                   ymin=rep(mus[order(mus)]-.5*c(1,diff(mus[order(mus)])),nT),
+                   ymax=rep(mus[order(mus)]+.5*c(diff(mus[order(mus)]),1),nT),
+                   xmin=rep(1:nT - .5,each=npart),
+                   xmax=rep(1:nT + .5,each=npart))
+
+gdat <- rbind(gdat,
+           data.frame(parameter="sigma",
+                      t=rep(1:nT,each=npart),mu=rep(sigmas[order(sigmas)],nT),
+                      w=as.numeric(W[order(sigmas),]),
+                      ymin=rep(sigmas[order(sigmas)]-.5*c(1,diff(sigmas[order(sigmas)])),nT),
+                      ymax=rep(sigmas[order(sigmas)]+.5*c(diff(sigmas[order(sigmas)]),1),nT),
+                      xmin=rep(1:nT - .5,each=npart),
+                      xmax=rep(1:nT + .5,each=npart)))
+gdat$parameter <- factor(gdat$parameter)
+
+gdat2 <- rbind(
+  data.frame(parameter="mu",x=1:nT,y=mu_post),
+  data.frame(parameter="sigma",x=1:nT,y=sigma_post))
+gdat2$parameter <- factor(gdat2$parameter,labels=c(expression(mu),expression(sigma)))
+
+ggplot(gdat) + theme_bw() + 
+  geom_rect(aes(fill=w,colour=w,ymin=ymin,ymax=ymax,xmin=xmin,xmax=xmax)) +
+  geom_line(data=gdat2,aes(x=x,y=y),colour="white") +  
+  geom_hline(yintercept = 5,colour="white",lty=2) + 
+  facet_wrap(~parameter,labeller = "label_parsed") + 
+  coord_cartesian(ylim = c(.5, 10)) + xlab("t") + ylab("value") + 
+  scale_fill_gradient(low=lowgrad,high=highgrad,trans="sqrt") + 
+  scale_colour_gradient(low=lowgrad,high=highgrad,trans="sqrt") + 
+  scale_x_continuous(limits=c(1,100),expand=c(0,0)) + 
+  xlab("Time point (t)") + ylab("Value") + 
+  theme(strip.text = element_text(size = rel(1.1)),axis.title=element_text(size = rel(1.5)))
+```
+
+
+
+### Sequential importance sampling and resampling
+```{r}
+# Simulate the true latent process (theta) and observations (y)
+set.seed(5:9)
+mu0 <- 10
+sigma0 <- sqrt(2)
+sigmaxi <- 1
+sigmaeps <- sqrt(10)
+n <- 50
+theta <- rnorm(1, mean=mu0, sd=sigma0) + c(0, cumsum(rnorm(n-1, mean=0, sd=sigmaxi)))
+y <- theta + rnorm(n, mean=0, sd=sigmaeps)
+
+npart <- 500 # number of particles to use
+
+# Kalman Filter to analytically estimate the posterior mean
+# mt contains posterior mean
+# st contains posterior variance
+mt <- st <- vector("double",length=n+1)
+mt[1] <- mu0
+st[1] <- sigma0^2
+for(t in 1:n) {
+    Kt <- (st[t] + sigmaxi^2)/(st[t] + sigmaxi^2 + sigmaeps^2)
+    st[t+1] <- Kt*sigmaeps^2
+    mt[t+1] <- mt[t] + Kt*(y[t] - mt[t])
+}
+
+# The systematic resampling algorithm
+resample_systematic <- function(weights) {
+  # input: weights is a vector of length N with (unnormalized) importance weights
+  # output: a vector of length N with indices of the replicated particles
+  N <- length(weights)
+  weights <- weights/sum(weights)# normalize weights
+  csum <- cumsum(weights)
+  u1 <- runif(1,min=0,max=1/N) # draw a single uniform number
+  u <- c(0,seq(1/N,(N-1)/N,length=N-1)) + u1
+  idx <- vector("integer",length=length(weights))
+  j <- 1
+  for(i in 1:N) {
+    while (u[i] > csum[j]) {
+      j <- j + 1
+    }
+    idx[i] <- j
+  }
+  return(idx)
+}
+
+# Bootstrap filter
+# create matrices to store the particle values and weights
+Ta <- Wa <- matrix(NA,ncol=npart,nrow=n+1) 
+set.seed(0) # set the seed to exactly replicate results
+# draw the particles for the initial state from the prior distribution
+Ta[1,] <- rnorm(npart,mean=mu0,sd=sigma0)
+# implicitly W <- 1/npart
+# loop over time
+for(t in 1:n) {
+    # sample particles according to the transition distribution
+    Ta[t+1,] <- rnorm(npart, mean=Ta[t,], sd = sigmaxi)
+    # compute the weights
+    Wa[t+1,] <- dnorm(y[t], mean=Ta[t+1,], sd=sigmaeps) # could have multiplied by W, but not necessary with uniform weights
+    Wa[t+1,] <- Wa[t+1,]/sum(Wa[t+1,]) # normalize
+    # draw indices of particles with systematic resampling
+    idx <- resample_systematic(Wa[t+1,])
+    # implicitly W <- 1/npart
+    Ta[t+1,] <- Ta[t+1,idx]
+}
+
+# The same filter without resampling (straightforward SIS)
+Tb <- Wb <- matrix(NA,ncol=npart,nrow=n+1)
+set.seed(0)
+Tb[1,] <- rnorm(npart,mean=mu0,sd=sigma0)
+Wb[1,] <- 1/npart
+for(t in 1:n) {
+    Tb[t+1,] <- rnorm(npart,mean=Tb[t,],sd=sigmaxi)
+    Wb[t+1,] <- dnorm(y[t],mean=Tb[t+1,],sd=sigmaeps)*Wb[t,]
+    Wb[t+1,] <- Wb[t+1,]/sum(Wb[t+1,])
+}
+
+## ----GaussProcessFig,echo=FALSE,fig.width=6,fig.height=5-----------------
+plot(1:n,y,ylab="Value",xlab="Time point (t)")
+points(1:n,theta,pch=16)
+lines(mt[-1],lty=1)
+lines(rowSums(Ta*Wa)[-1],lty=2)
+lines(rowSums(Tb*Wb)[-1],lty=3)
+legend(c(0,max(y)),pch=c(1,16,NA,NA,NA),lty=c(NA,NA,1,2,3),
+       legend=c(expression(y[t]),expression(phi[t]),"posterior mean","Bootstrap filter (c=1)","SIS (c=0)"),bty="n") 
+```
+
+
+### References
+[1] A tutorial on particle filters Maarten Speekenbrink (2016) *Journal of Mathematical Psychology* 73:140–152

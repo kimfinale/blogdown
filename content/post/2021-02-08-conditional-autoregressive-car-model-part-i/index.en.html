@@ -1,0 +1,225 @@
+---
+title: Conditional autoregressive (CAR) model (Part I)
+author: ''
+date: '2021-02-08'
+slug: conditional-autoregressive-car-model-part-i
+categories: []
+tags: []
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-02-08T12:35:06+09:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+<p>I am a beginner in statistics and spatial statistics in particular. In his book <em>Applied Spatial Data Analysis with R</em>, Bivand describes our understanding of the data as the following equation:</p>
+<p><span class="math display">\[\text{data = smooth + rough}\]</span>
+For spatial data, the equation becomes:</p>
+<p><span class="math display">\[\text{data = smooth + spatial smooth + rough}\]</span>
+The author also emphasizes that it is important to think through the question and figure out whether the spatial solution would be worth the effort.</p>
+<p>Since I will have to model using raster images I will spend some efforts to understand basic manipulations. A very good description of spatial data analysis is available at <a href="https://keen-swartz-3146c4.netlify.app/">Spatial Data Science</a>.</p>
+<p>So I first need to understand that there is something spatial in my data. In other words, I need to test whether there is a spatial autocorrelation in the data. One way to test spatial autocorrelation is to use the statistic called Moran’s I. Before delving into how to compute Moran’s I, let’s understand the basic concept, autocorrelation</p>
+<div id="autocorrelation" class="section level2">
+<h2>Autocorrelation</h2>
+<p>The following post was adopted from the website <a href="https://rspatial.org/raster/analysis/3-spauto.html">Spatial Data Science</a>. Autocorrelation (whether spatial or not) is a measure of similarity (correlation) between nearby observations. One example that is autocorrelated would be person’s weights measured over time.</p>
+<pre class="r"><code>set.seed(0)
+d &lt;- sample(100, 10) # 10 observations between ages 1 and 100</code></pre>
+<p>Compute auto-correlation.</p>
+<pre class="r"><code>a &lt;- d[-length(d)]
+b &lt;- d[-1]
+plot(a, b, xlab=&#39;t&#39;, ylab=&#39;t-1&#39;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-2-1.png" width="672" /></p>
+<pre class="r"><code>cor(a, b)</code></pre>
+<pre><code>## [1] 0.1227634</code></pre>
+<pre class="r"><code>## [1] 0.1227634</code></pre>
+<p>Autocorrelation should appear after sorting</p>
+<pre class="r"><code>d &lt;- sort(d)
+a &lt;- d[-length(d)]
+b &lt;- d[-1]
+plot(a, b, xlab=&#39;t&#39;, ylab=&#39;t-1&#39;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
+<p>The acf (auto-correlation function) function shows autocorrelation computed in a slightly different way for several lags (it is 1 to each point it self, very high when comparing with the nearest neighbor, and then tapers off).</p>
+<pre class="r"><code>acf(d)</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-5-1.png" width="672" /></p>
+</div>
+<div id="spatial-autocorrelation-morans-i" class="section level2">
+<h2>Spatial autocorrelation: Moran’s I</h2>
+<p>Spatial autocorrelation is the similar to the previous one-dimensional, temporal autocorrelation but it has at least two dimentions, which makes it more complicated.
+A common statistic used to describe spatial autocorrelation is Moran’s I, defined as below:</p>
+<p><span class="math display">\[I = \frac{n}{\sum_{i=1}^n (y_i-\bar{y})^2} \frac{\sum_{i=1}^n \sum_{j=1}^n w_{ij}(y_i-\bar{y})(y_j-\bar{y})}{\sum_{i=1}^n \sum_{j=1}^n w_{ij}}\]</span>
+, where <span class="math inline">\(w_{ij}\)</span> represents the weight matrix. We will see the weight matrix in more detain in a bit.</p>
+<p>Below is an example using a polygon file from the raster package.</p>
+<pre class="r"><code>library(raster)</code></pre>
+<pre><code>## Loading required package: sp</code></pre>
+<pre class="r"><code>p &lt;- shapefile(system.file(&quot;external/lux.shp&quot;, package=&quot;raster&quot;)) # Luxembourg
+p &lt;- p[p$NAME_1==&quot;Diekirch&quot;, ]
+p$value &lt;- c(10, 6, 4, 11, 6)
+data.frame(p)</code></pre>
+<pre><code>##   ID_1   NAME_1 ID_2   NAME_2 AREA value
+## 0    1 Diekirch    1 Clervaux  312    10
+## 1    1 Diekirch    2 Diekirch  218     6
+## 2    1 Diekirch    3  Redange  259     4
+## 3    1 Diekirch    4  Vianden   76    11
+## 4    1 Diekirch    5    Wiltz  263     6</code></pre>
+<p>Let’s suppose that we want to know if there is an spatial autocorrelation in the variable, AREA</p>
+<pre class="r"><code># par(mai=c(0,0,0,0))
+# plot(p, col=2:7)
+# xy &lt;- coordinates(p)
+# points(xy, cex=6, pch=20, col=&#39;white&#39;)
+# text(p, &#39;ID_2&#39;, cex=1.5)
+library(sf)</code></pre>
+<pre><code>## Linking to GEOS 3.8.0, GDAL 3.0.4, PROJ 6.3.1</code></pre>
+<pre class="r"><code>library(ggplot2)
+library(viridis)</code></pre>
+<pre><code>## Loading required package: viridisLite</code></pre>
+<pre class="r"><code>psf &lt;- st_as_sf(p)
+ggplot() +
+  geom_sf(data=psf, aes(fill=NAME_2 )) +
+  scale_fill_viridis_d(&quot;Canton&quot;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-7-1.png" width="672" /></p>
+<p>To determine weight, we first</p>
+<pre class="r"><code>library(spdep)</code></pre>
+<pre><code>## Loading required package: spData</code></pre>
+<pre><code>## To access larger datasets in this package, install the spDataLarge
+## package with: `install.packages(&#39;spDataLarge&#39;,
+## repos=&#39;https://nowosad.github.io/drat/&#39;, type=&#39;source&#39;)`</code></pre>
+<pre class="r"><code>w &lt;- poly2nb(p, row.names=p$Id)
+class(w)</code></pre>
+<pre><code>## [1] &quot;nb&quot;</code></pre>
+<pre class="r"><code>## [1] &quot;nb&quot;
+summary(w)</code></pre>
+<pre><code>## Neighbour list object:
+## Number of regions: 5 
+## Number of nonzero links: 14 
+## Percentage nonzero weights: 56 
+## Average number of links: 2.8 
+## Link number distribution:
+## 
+## 2 3 4 
+## 2 2 1 
+## 2 least connected regions:
+## 2 3 with 2 links
+## 1 most connected region:
+## 1 with 4 links</code></pre>
+<pre class="r"><code>## Neighbour list object:
+## Number of regions: 5
+## Number of nonzero links: 14
+## Percentage nonzero weights: 56
+## Average number of links: 2.8
+## Link number distribution:
+##
+## 2 3 4
+## 2 2 1
+## 2 least connected regions:
+## 2 3 with 2 links
+## 1 most connected region:
+## 1 with 4 links</code></pre>
+</div>
+<div id="assign-autoregressive-and-linearly-dependent-by-covariates-valuevariables" class="section level2">
+<h2>assign autoregressive and linearly dependent by covariates valuevariables</h2>
+<p><span class="math display">\[ Y = \alpha + \beta X + \epsilon\]</span>
+<span class="math display">\[ \epsilon = \lambda W Y + \eta\]</span>
+<span class="math display">\[ \eta_i \sim \mathcal{N}(0,\sigma^2) \; \forall i  \]</span></p>
+<p><span class="math display">\[ Y = (I-\lambda W)^{-1} \beta X + (I - \lambda W)^{-1} \eta) \]</span></p>
+<pre class="r"><code># fake data
+library(raster)
+library(spdep)
+library(MASS)
+library(tidyverse)
+set.seed(1)
+r &lt;- raster(nrow=10, ncol=10)
+values(r) &lt;- runif(ncell(r)) * 10
+poly &lt;- rasterToPolygons(r)
+nb &lt;- poly2nb(poly) # coordinates to neighbors
+lambda = 0.8
+beta = 0.3
+alpha = 26
+W = nb2mat(nb)
+# poly$layer2 = alpha + beta * poly$layer + lambda * as.vector(nbmat %*% poly$layer2) + rnorm(length(poly$layer))
+library(matlib) 
+poly$layer2 = as.vector(inv(diag(100) - lambda * W) %*% (beta * poly$layer)) + as.vector(inv(diag(100) - lambda * W) %*% rnorm(length(poly$layer), mean=0, sd=2))
+plot(data.frame(poly))</code></pre>
+<p><img src="{{< blogdown/postref >}}index.en_files/figure-html/unnamed-chunk-12-1.png" width="672" /></p>
+<pre class="r"><code>fit1 = lm(layer2 ~ layer, data=data.frame(poly))
+fit2 = rlm(layer2 ~ layer, data=data.frame(poly))
+fitsp &lt;- errorsarlm(layer2 ~ layer, data=data.frame(poly), listw=nb2listw(nb))
+summary(fit1)</code></pre>
+<pre><code>## 
+## Call:
+## lm(formula = layer2 ~ layer, data = data.frame(poly))
+## 
+## Residuals:
+##     Min      1Q  Median      3Q     Max 
+## -7.1106 -1.4976  0.1222  1.6049  6.1966 
+## 
+## Coefficients:
+##             Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)  5.83301    0.55246  10.558  &lt; 2e-16 ***
+## layer        0.34611    0.09488   3.648 0.000426 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
+## 
+## Residual standard error: 2.526 on 98 degrees of freedom
+## Multiple R-squared:  0.1196, Adjusted R-squared:  0.1106 
+## F-statistic: 13.31 on 1 and 98 DF,  p-value: 0.0004259</code></pre>
+<pre class="r"><code>summary(fit2)</code></pre>
+<pre><code>## 
+## Call: rlm(formula = layer2 ~ layer, data = data.frame(poly))
+## Residuals:
+##      Min       1Q   Median       3Q      Max 
+## -7.17647 -1.55321  0.04221  1.57190  6.10487 
+## 
+## Coefficients:
+##             Value   Std. Error t value
+## (Intercept)  5.8080  0.5513    10.5357
+## layer        0.3611  0.0947     3.8144
+## 
+## Residual standard error: 2.347 on 98 degrees of freedom</code></pre>
+<pre class="r"><code>summary(fitsp)</code></pre>
+<pre><code>## 
+## Call:errorsarlm(formula = layer2 ~ layer, data = data.frame(poly), 
+##     listw = nb2listw(nb))
+## 
+## Residuals:
+##      Min       1Q   Median       3Q      Max 
+## -4.02720 -1.19849 -0.16026  0.94114  4.72028 
+## 
+## Type: error 
+## Coefficients: (asymptotic standard errors) 
+##             Estimate Std. Error z value  Pr(&gt;|z|)
+## (Intercept) 5.733719   0.822052  6.9749 3.061e-12
+## layer       0.354805   0.067186  5.2809 1.286e-07
+## 
+## Lambda: 0.74837, LR test value: 46.141, p-value: 1.1007e-11
+## Asymptotic standard error: 0.081376
+##     z-value: 9.1965, p-value: &lt; 2.22e-16
+## Wald statistic: 84.576, p-value: &lt; 2.22e-16
+## 
+## Log likelihood: -210.4811 for error model
+## ML residual variance (sigma squared): 3.4875, (sigma: 1.8675)
+## Number of observations: 100 
+## Number of parameters estimated: 4 
+## AIC: 428.96, (AIC for lm: 473.1)</code></pre>
+<pre class="r"><code>newd = data.frame(layer = seq(0, 10, length.out = 100))
+preddf &lt;- data.frame(pred = predict(fit1, data.frame(poly)))
+fit1p = predict(fit1, newd, interval = &quot;prediction&quot;)
+fit1p = predict(fit1, newd, interval = &quot;confidence&quot;)
+d &lt;- cbind(preddf, poly@data)
+# d %&gt;% 
+#   # pivot_longer(col = -x) %&gt;% 
+#   ggplot(aes(x=x)) + 
+#   geom_point(aes(y=layer2)) +
+#   geom_line(aes(y=fit1$fitted.values), color=&quot;darkred&quot;) +
+#   geom_abline(aes(intercept = coef(fit1)[[&quot;(Intercept)&quot;]], 
+#                   slope = coef(fit1)[[&quot;layer&quot;]]),  
+#               color = &quot;dodgerblue&quot;)</code></pre>
+</div>

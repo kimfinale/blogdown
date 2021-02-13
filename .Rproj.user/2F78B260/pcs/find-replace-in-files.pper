@@ -1,0 +1,13 @@
+{
+    "dialog-state": {
+        "query": "Nelson",
+        "path": "C:/Users/jonghoon.kim/Blog/blogdown",
+        "regex": false,
+        "caseSensitive": true,
+        "filePatterns": [],
+        "excludeFilePatterns": [],
+        "resultsCount": 7,
+        "errorCount": 0,
+        "replaceErrors": ""
+    }
+}

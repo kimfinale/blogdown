@@ -1,0 +1,121 @@
+---
+title: Multinomial distribution in a disease transmission model
+author: Jong-Hoon Kim
+date: '2021-02-03'
+slug: multinomial-distribution-in-a-disease-transmission-model
+categories: []
+tags:
+  - R Markdown
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-02-03T06:40:46+09:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+
+<p>When implementing a model of stochastic disease transmission, one is confronted find a vaild way to calculate the number of events across multiple pathways. For example, susceptible people may be infected or die. One excellent way to follow the approach by <a href="https://github.com/kingaa/pomp/blob/master/src/pomp.h">Aaron King</a>. He posted a code  to just that. It was written in C and I adapted it to R and C++ while removing many of its functions (e.g., checking the validity of the inputs).</p>
+<pre class="r"><code>reulermultinom2 &lt;- function (m=2, size, rate, dt) {
+  trans &lt;- matrix(NA, nrow=m, ncol=length(rate))
+  p &lt;- 0.0 # total event rate
+  if ((size &lt; 0.0) | (dt &lt; 0.0) | (floor(size+0.5) != size)) {
+    for (k in seq_along(rate)) {
+      trans[k] = NaN
+    }
+    return(trans)
+  }
+  if (sum(rate &lt; 0.0) &gt; 0){
+    stop(&quot;Negative rates  are not allowed&quot;)
+  }
+  else {
+    p &lt;- sum(rate)
+  }
+  if (p &gt; 0.0) {
+    for (i in 1:m) {
+      tmpsize &lt;- rbinom(1, size = size, prob = (1-exp(-p*dt))) # total number of events
+      tmpp &lt;- p
+      for (k in 1:(length(rate)-1)) {
+        trans[i, k] = rbinom(1, tmpsize, rate[k]/tmpp)
+        tmpsize = tmpsize - trans[i, k];
+        tmpp = tmpp - rate[k];
+      }
+      trans[i, length(rate)] = tmpsize;
+    }    
+  } 
+  
+  return(trans)
+}
+reulermultinom2(3, 1000, rate = c(1,2), dt = 0.1)</code></pre>
+<pre><code>##      [,1] [,2]
+## [1,]   98  171
+## [2,]  102  184
+## [3,]   88  176</code></pre>
+<p>Let’s compare with the original function provided in the pomp package</p>
+<pre class="r"><code>x &lt;- t(pomp::reulermultinom(1e5, 100, rate=c(1,2), dt=0.05))
+y &lt;- reulermultinom2(1e5, 100, rate=c(1,2), dt=0.05)
+xy &lt;- as.data.frame(cbind(x, y))
+names(xy) &lt;- c(&quot;pomp_var1&quot;, &quot;pomp_var2&quot;, &quot;var1&quot;, &quot;var2&quot;)
+apply(xy, 2, summary)</code></pre>
+<pre><code>##         pomp_var1 pomp_var2     var1     var2
+## Min.      0.00000   0.00000  0.00000  0.00000
+## 1st Qu.   3.00000   7.00000  3.00000  7.00000
+## Median    4.00000   9.00000  4.00000  9.00000
+## Mean      4.65025   9.28736  4.63089  9.28156
+## 3rd Qu.   6.00000  11.00000  6.00000 11.00000
+## Max.     17.00000  23.00000 16.00000 26.00000</code></pre>
+<p>Speed difference is quite substantial.</p>
+<pre class="r"><code>library(microbenchmark)
+microbenchmark(pomp::reulermultinom(100, 100, rate=c(1,2), dt=0.05), reulermultinom2(100, 100, rate=c(1,2), dt=0.05))</code></pre>
+<pre><code>## Unit: microseconds
+##                                                       expr     min       lq
+##  pomp::reulermultinom(100, 100, rate = c(1, 2), dt = 0.05)  28.601  29.8010
+##       reulermultinom2(100, 100, rate = c(1, 2), dt = 0.05) 310.500 313.1505
+##       mean  median       uq      max neval
+##   32.48505  31.602  32.2015   81.801   100
+##  354.07788 315.601 319.5515 2924.900   100</code></pre>
+<p>Rewrite the function in C++ using Rcpp.</p>
+<pre class="r"><code>Rcpp::cppFunction(&quot;NumericMatrix reulermultinom_cpp(int m, double size, NumericVector rate, double dt) {
+  int ncol = rate.size();
+  NumericMatrix trans(m, ncol);
+  double p = sum(rate); //total event rate
+  for (int i = 0; i &lt; m; i++) { 
+    double tmpp = p;
+    double tmpsize = R::rbinom(size, (1-exp(-tmpp*dt))); // total number of events
+    for (int k = 0; k &lt; (ncol-1); k++) {
+      double tr = R::rbinom(tmpsize, rate(k)/tmpp);
+      trans(i, k) = tr;
+      tmpsize = tmpsize - trans(i, k);
+      tmpp = tmpp - rate(k);
+    }
+    trans(i, (ncol-1)) = tmpsize;
+  }    
+  return(trans);
+}&quot;)</code></pre>
+<p>Now speed difference is negligible.</p>
+<pre class="r"><code>library(microbenchmark)
+microbenchmark(pomp::reulermultinom(1e5, 100, rate=c(1,2), dt=0.05), reulermultinom_cpp(1e5, 100, rate=c(1,2), dt=0.05))</code></pre>
+<pre><code>## Unit: milliseconds
+##                                                         expr     min       lq
+##  pomp::reulermultinom(1e+05, 100, rate = c(1, 2), dt = 0.05) 18.1349 18.36175
+##    reulermultinom_cpp(1e+05, 100, rate = c(1, 2), dt = 0.05) 17.5600 17.86525
+##     mean   median       uq     max neval
+##  18.7523 18.58250 18.90435 21.4356   100
+##  18.2153 18.08965 18.34630 21.2301   100</code></pre>
+<pre class="r"><code>x &lt;- t(pomp::reulermultinom(1e5, 100, rate=c(1,2), dt=0.05))
+y &lt;- reulermultinom_cpp(1e5, 100, rate=c(1,2), dt=0.05)
+xy &lt;- as.data.frame(cbind(x, y))
+names(xy) &lt;- c(&quot;pomp_var1&quot;, &quot;pomp_var2&quot;, &quot;var1&quot;, &quot;var2&quot;)
+apply(xy, 2, summary)</code></pre>
+<pre><code>##         pomp_var1 pomp_var2     var1     var2
+## Min.      0.00000   0.00000  0.00000  0.00000
+## 1st Qu.   3.00000   7.00000  3.00000  7.00000
+## Median    4.00000   9.00000  4.00000  9.00000
+## Mean      4.65104   9.28626  4.64298  9.29377
+## 3rd Qu.   6.00000  11.00000  6.00000 11.00000
+## Max.     17.00000  26.00000 15.00000 24.00000</code></pre>
