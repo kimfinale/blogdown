@@ -1,0 +1,30 @@
+---
+title: Redefine statistical significance
+author: Jong-Hoon Kim
+date: '2021-03-02'
+slug: redefine-statistical-significance
+categories: []
+tags:
+  - p-value
+  - power
+  - reproducibility
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-03-02T20:53:13+09:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+## Redefine statistical significance
+Benjamin, D.J., Berger, J.O., Johannesson, M. *et al*. Redefine statistical significance. Nat Hum Behav 2, 6–10 (2018). https://doi.org/10.1038/s41562-017-0189-z
+
+This paper argues that simply increasing a cut-off $P$ value for statistical significance from 0.05 to 0.005 will help solve so-called reproducibility crisis in research. 
+
+In testing a point null hypothesis $H_0$ against an alternative hypothesis $H_1$ based on data $x_{\text{obs}}$, the $P$ value is defined as the probability, calculated under the null hypothesis, that a test statistic is as extreme or more extreme than its observed value.
+
+$$\frac{\text{Pr}(H_1|x_{\text{obs}})}{\text{Pr}(H_0|x_{\text{obs}})} = \frac{f(x_{\text{obs}}|H_1)}{f(x_{\text{obs}}|H_0)} \times 
+\frac{\text{Pr}(H_1)}{\text{Pr}(H_0)} = \text{BF} \times \text{(prior odds)}$$

@@ -1,0 +1,41 @@
+---
+title: 'Adding an exising project to GitHub using the command line'
+author: Jong-Hoon Kim
+date: '2021-03-20'
+slug: adding-an-exising-project-to-github-using-the-command-line
+categories: []
+tags:
+  - GitHub
+  - R
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-03-20T06:28:21+09:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+
+<ol style="list-style-type: decimal">
+<li><p>Create a GitHub repository. GitHub page already describes how to add an existing project to the GitHub repository. We can follow the guideline. However, we first need to initiate our local folder as a Git repository.
+<img src="images/github_image.png" width="1537" height="967" /></p></li>
+<li><p>Open Git Bash. Or since I am usually on RStudio IDE and I can go to Terminal tab to execute the command.
+<img src="images/terminal_tab.png" width="800" height="400" /></p></li>
+<li><p>Initialize local directory as a Git repository.<br>
+<code>git init</code></p></li>
+<li><p>Add files to the local repository that was just created. This stages them for the commit.<br>
+<code>git add .</code></p></li>
+<li><p>Commit the files in the local repository.<br>
+<code>git commit -m "message"</code></p></li>
+<li><p>Make a remote connection to the GitHub repository.<br>
+<code>git remote add origin remote_repository_URL</code><br> <code>remote_repository_URL</code> exists in the GitHub (see the image above). Now origin becomes a shortcut to the remote repository.</p></li>
+<li><p>(Optional) List the remote connections you have.<br>
+<code>git remove -v</code></p></li>
+<li><p>Push the changes in the local repository to the GitHub repository.<br>
+<code>git push -f origin master</code></p></li>
+</ol>
